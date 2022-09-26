@@ -1,0 +1,66 @@
+-- 1. Download vechile sales data -> https://github.com/shashank-mishra219/Hive-Class/blob/main/sales_order_data.csv
+-- ALREADY DONE
+
+-- -------------------------------------
+
+create database database_assignment1;
+use database_assignment1;
+set hive.cli.print.header = true;
+
+-- -------------------------------------
+
+-- 2. Store raw data into hdfs location
+!hadoop fs -put /home/aiprs137/sales_order_data.csv /user/hive/warehouse/database_assignment1.db/;
+!hadoop fs -ls /user/hive/warehouse/database_assignment1.db/;
+
+-- -------------------------------------
+
+-- 3. Create a internal hive table "sales_order_csv" which will store csv data sales_order_csv .. make sure to skip header row while creating table
+create table sales_order_csv (ORDERNUMBER int, QUANTITYORDERED int, PRICEEACH float, ORDERLINENUMBER int, SALES float, STATUS string, QTR_ID int, MONTH_ID int, YEAR_ID int, PRODUCTLINE string, MSRP int, PRODUCTCODE string, PHONE string, CITY string, STATE string, POSTALCODE string, COUNTRY string, TERRITORY string, CONTACTlASTNAME string, CONTACTFIRSTNAME string, DEALSIZE string) row format delimited fields terminated by ',' tblproperties ("skip.header.line.count" = "1");
+show tables;
+
+-- 4. Load data from hdfs path into "sales_order_csv" 
+load data inpath '/user/hive/warehouse/database_assignment1.db/' into table sales_order_csv;
+select * from sales_order_csv limit 10;
+
+-- 5. Create an internal hive table which will store data in ORC format "sales_order_orc"
+create table sales_order_orc (ORDERNUMBER int, QUANTITYORDERED int, PRICEEACH float, ORDERLINENUMBER int, SALES float, STATUS string, QTR_ID int, MONTH_ID int, YEAR_ID int, PRODUCTLINE string, MSRP int, PRODUCTCODE string, PHONE string, CITY string, STATE string, POSTALCODE string, COUNTRY string, TERRITORY string, CONTACTlASTNAME string, CONTACTFIRSTNAME string, DEALSIZE string) stored as ORC;
+show tables;
+
+-- 6. Load data from "sales_order_csv" into "sales_order_orc"
+insert into table sales_order_orc select * from sales_order_csv;
+select * from sales_order_orc limit 10;
+
+-- Perform below menioned queries on "sales_order_orc" table:
+
+-- a. Calculate total sales per year
+select YEAR_ID, sum(SALES) from sales_order_orc as total_sales group by YEAR_ID order by YEAR_ID;
+
+-- b. Find a product for which maximum orders were placed
+create table sales_order_orc_product (PRODUCTLINE string, QUANTITYORDERED int) stored as orc;
+insert into sales_order_orc_product select PRODUCTLINE, sum(QUANTITYORDERED) from sales_order_orc group by PRODUCTLINE;
+select PRODUCTLINE, QUANTITYORDERED from sales_order_orc_product where QUANTITYORDERED = (select max(QUANTITYORDERED) from sales_order_orc_product);
+
+-- c. Calculate total sales for each quarter
+select QTR_ID, sum(SALES) as total_sales from sales_order_orc group by QTR_ID order by QTR_ID;
+
+-- d. In which quarter sales was minimum
+create table sales_order_orc_qtr (QTR_ID int, SALES float) stored as orc;
+insert into sales_order_orc_qtr select QTR_ID, sum(SALES) from sales_order_orc group by QTR_ID;
+select QTR_ID, SALES from sales_order_orc_qtr where SALES = (select min(SALES) from sales_order_orc_qtr);
+
+-- e. In which country sales was maximum and in which country sales was minimum 
+create table sales_order_orc_country (COUNTRY string, SALES float) stored as orc;
+insert into sales_order_orc_country select COUNTRY, sum(SALES) as total_sales from sales_order_orc group by COUNTRY;
+select COUNTRY, SALES from sales_order_orc_country where SALES = (select max(SALES) from sales_order_orc_country);
+select COUNTRY, SALES from sales_order_orc_country where SALES = (select min(SALES) from sales_order_orc_country);
+
+-- f. Calculate quarterly sales for each city
+select CITY, QTR_ID, sum(SALES) as total_sales from sales_order_orc group by CITY, QTR_ID order by CITY, QTR_ID;
+
+-- g. Find a month for each year in which maximum number of quantities were sold
+create table sales_order_orc_1 (YEAR int, MONTH int, TOTAL_ORDERS int) stored as orc;
+insert into sales_order_orc_1 select YEAR_ID, MONTH_ID,sum(QUANTITYORDERED) from sales_order_orc group by YEAR_ID, MONTH_ID order by YEAR_ID;
+create table sales_order_orc_2 (YEAR int, TOTAL_ORDERS int) stored as orc;
+insert into sales_order_orc_2 select YEAR, max(TOTAL_ORDERS) from sales_order_orc_1 group by YEAR;
+select b.YEAR, a.MONTH, b.TOTAL_ORDERS from sales_order_orc_1 a inner join sales_order_orc_2 b on (a.YEAR = b.YEAR AND a.TOTAL_ORDERS = b.TOTAL_ORDERS);
